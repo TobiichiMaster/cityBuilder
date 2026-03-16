@@ -1,0 +1,5 @@
+
+blender
+mcp
+dotenv
+openai
