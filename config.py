@@ -1,10 +1,15 @@
 from typing import Optional
 from dotenv import load_dotenv
 import os
+from pathlib import Path
+
+# 获取 config.py 所在的目录（即项目根目录）
+BASE_DIR = Path(__file__).resolve().parent
+# 显式指定 .env 文件的绝对路径
+env_path = BASE_DIR / ".env"
 
 # 加载配置
-load_dotenv()
-
+load_dotenv(dotenv_path=env_path)
 # 创建配置类
 class Config:
     # 大模型配置

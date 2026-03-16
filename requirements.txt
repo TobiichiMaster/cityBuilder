@@ -1,5 +1,5 @@
 
 blender
 mcp
-dotenv
+python-dotenv
 openai

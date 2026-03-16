@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))  # 自动添加项目根目录到Python路径
 
 from mcp.server.fastmcp import FastMCP
-from dotenv import load_dotenv
 import subprocess
 import os
 import json
@@ -19,7 +18,6 @@ blender_mcp_server
 
 #环境配置
 mcp = FastMCP("Blender_tool_server")
-load_dotenv()
 
 #脚本路径
 server_dir = os.path.dirname(os.path.abspath(__file__)) #当前mcp服务器文件夹位置
