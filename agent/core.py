@@ -67,7 +67,7 @@ async def run_builder_agent():
             ]
             
             # 咱们给 Agent 出的考卷
-            user_task = "请你帮我用基础图像搭建一个长城，长城不需要特别长"
+            user_task = "请帮我搭建一个四个脚的方桌，放桌上要放置一个用球体代表的苹果，方桌的一侧放置一个使用多个立方体搭建的椅子（无靠背）"
             print(f"👤 用户需求: {user_task}\n")
             messages.append({"role": "user", "content": user_task})
 

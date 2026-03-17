@@ -18,6 +18,11 @@ os.makedirs(scenes_dir, exist_ok=True)
 
 # 4. 清空默认场景
 bpy.ops.wm.read_factory_settings(use_empty=True)
+# 铺设一块巨大的地面 (Plane)，半径 10 米，位置在 Y=0 (或 Z=0，取决于你的坐标系)
+# 这能让所有物体产生接触阴影，极大增强大模型的视觉空间感知！
+bpy.ops.mesh.primitive_plane_add(size=20.0, location=(0.0, 0.0, 0.0))
+# 给地面改个名字防止和模型混淆
+bpy.context.active_object.name = "Ground_Plane"
 
 # 5. 保存干净的场景 (传入具体的文件路径 save_path)
 bpy.ops.wm.save_as_mainfile(filepath=save_path)
