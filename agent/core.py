@@ -2,103 +2,228 @@ import asyncio
 import os
 import sys
 import json
+import base64
 from pathlib import Path
 from openai import AsyncOpenAI
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
 from memoryManager import MemoryManager
+
 sys.path.append(str(Path(__file__).parent.parent))
 from config import Config
 
 # ==========================================
 # 🧠 1. 异构大模型客户端初始化
 # ==========================================
-# Builder 大脑：可以配置为本地 vLLM (例如 Qwen-VL 部署在本地的 8000 端口)
+# Builder 大脑 (干活的苦力，可以用稍微便宜/本地的模型，只要能写 JSON 就行)
 builder_client = AsyncOpenAI(
-    api_key=os.getenv("BUILDER_API_KEY", "EMPTY"), # vLLM 通常不需要复杂的 key
-    base_url=os.getenv("BUILDER_BASE_URL", "http://localhost:8000/v1")
+    api_key=Config.builder_api_key,
+    base_url=Config.builder_base_url
 )
-BUILDER_MODEL_ID = os.getenv("BUILDER_MODEL_ID", "qwen-vl-chat")
+BUILDER_MODEL_ID = Config.builder_model_id
 
-# Observer 大脑：可以配置为云端最强多模态模型 (例如 ModelScope 的 qwen-vl-max)
+# Observer 大脑 (冷酷的监工，【必须】使用最强的多模态视觉大模型，如 qwen-vl-max 或 Kimi-Vision)
 observer_client = AsyncOpenAI(
-    api_key=Config.llm_api_key, 
-    base_url=Config.llm_base_url
+    api_key=Config.observer_api_key, 
+    base_url=Config.observer_base_url
 )
-OBSERVER_MODEL_ID = Config.llm_model_id
+OBSERVER_MODEL_ID = Config.observer_model_id
 
+# ==========================================
+# 🔧 2. 工具与编码辅助函数
+# ==========================================
+def format_mcp_tools_for_llm(mcp_tools, allowed_tool_names=None):
+    """将 MCP 工具转为大模型识别的 OpenAI 格式，并支持白名单过滤"""
+    formatted_tools = []
+    for tool in mcp_tools:
+        if allowed_tool_names is not None and tool.name not in allowed_tool_names:
+            continue
+        formatted_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.inputSchema 
+            }
+        })
+    return formatted_tools
 
-
-
+def encode_image_to_base64(image_path):
+    """将本地图片转换为 Base64 编码"""
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 # ==========================================
 # 🚀 3. 双核驱动主循环
 # ==========================================
 async def run_heterogeneous_agents():
-    print("🔋 正在启动异构双脑架构...")
+    print("🔋 正在启动异构多模态双脑架构...")
     
-    # 定义两个独立的 MCP Server 路径
     mcp_dir = os.path.join(Path(__file__).parent.parent, "mcp_server")
-    builder_server_script = os.path.join(mcp_dir, "builder_mcp_server.py")
-    observer_server_script = os.path.join(mcp_dir, "observer_mcp_server.py")
+    b_params = StdioServerParameters(command=Config.server_command, args=[os.path.join(mcp_dir, "builder_mcp_server.py")])
+    o_params = StdioServerParameters(command=Config.server_command, args=[os.path.join(mcp_dir, "observer_mcp_server.py")])
 
-    # 配置启动参数
-    builder_params = StdioServerParameters(command=Config.server_command, args=[builder_server_script])
-    observer_params = StdioServerParameters(command=Config.server_command, args=[observer_server_script])
-
-    # 🕸️ 建立双重网络连接 (使用 contextlib.AsyncExitStack 可以更优雅，这里用嵌套方便理解)
     print("🔗 正在建立双 MCP 物理隔离通道...")
-    async with stdio_client(builder_params) as (b_read, b_write), \
-               stdio_client(observer_params) as (o_read, o_write):
-        
-        async with ClientSession(b_read, b_write) as b_session, \
-                   ClientSession(o_read, o_write) as o_session:
+    async with stdio_client(b_params) as (b_read, b_write), stdio_client(o_params) as (o_read, o_write):
+        async with ClientSession(b_read, b_write) as b_session, ClientSession(o_read, o_write) as o_session:
             
             await b_session.initialize()
             await o_session.initialize()
-            print("✅ 双路 MCP 握手成功！")
+            print("✅ 双路 MCP 握手成功！\n")
 
-            # 独立获取工具
-            builder_tools_raw = (await b_session.list_tools()).tools
-            observer_tools_raw = (await o_session.list_tools()).tools
+            # 拆分并获取各自的工具
+            b_tools_raw = (await b_session.list_tools()).tools
+            o_tools_raw = (await o_session.list_tools()).tools
             
-            # 将工具格式化为 OpenAI 格式 (需要你自己把之前的 format_mcp_tools_for_llm 函数补进来)
-            # builder_tools = format_mcp_tools_for_llm(builder_tools_raw)
-            # observer_tools = format_mcp_tools_for_llm(observer_tools_raw)
+            # 严格控制白名单
+            builder_tools = format_mcp_tools_for_llm(b_tools_raw, ["initialize_blender_scene", "create_blender_object", "move_object", "rotate_object", "scale_object"])
+            observer_tools = format_mcp_tools_for_llm(o_tools_raw, ["get_scene_status", "render_camera_view"])
 
-            # 初始化系统提示词 (根据需要调整，加入关于处理图片的指令)
-            builder_messages = [{"role": "system", "content": "你是建造者... (支持识图)"}]
-            observer_messages = [{"role": "system", "content": "你是质检员... (支持识图)"}]
+            # 初始化灵魂记忆
+            builder_messages = [{
+                "role": "system", 
+                "content": (
+                    "你是 3D 场景建造者(Builder Brain)。"
+                    "1. 第一步必须调用 initialize_blender_scene。"
+                    "2. 你只能凭数学直觉进行搭建，尽最大努力把位置摆对。"
+                    "3. 搭建完成后，向 Observer 汇报你的操作，交出控制权。"
+                    "4. 对于 Observer 给出的绝对坐标修正要求，必须立刻无条件执行（调用 move_object / scale_object 等）！"
+                )
+            }]
+            
+            observer_messages = [{
+                "role": "system", 
+                "content": (
+                    "你是极其严苛的多模态 3D 场景审查员(Observer Brain)。"
+                    "你的工作流："
+                    "1. 必须同时调用 get_scene_status (获取雷达数据) 和 render_camera_view (拍照)。"
+                    "2. 拿到照片和 JSON 数据后，进行图文交叉验证！照片看整体关系和穿模，JSON 算绝对坐标。"
+                    "3. 指出错误，并用公式算出正确的 location 坐标给 Builder。"
+                    "4. 【极其重要】：如果有错误，回复最后单列一行：[VERDICT: FAIL] 。如果一切完美没有穿模，回复最后单列一行：[VERDICT: PASS] 。"
+                )
+            }]
 
-            # 用户的单幅图像重建需求
-            # 在最终项目中，这里会附带第一张用户输入的参考图 Base64
-            user_task = "请根据参考图，在 Blender 里搭建场景..."
+            user_task = "请帮我搭建一个四个脚的方桌，放桌上要放置一个用球体代表的苹果，方桌的一侧放置一个使用多个立方体搭建的椅子（无靠背）。"
             MemoryManager.append_and_prune(builder_messages, {"role": "user", "content": user_task})
 
-            # ==========================================
-            # 🔄 异构迭代循环
-            # ==========================================
-            for turn in range(5):
-                print(f"\n========== 🔄 [第 {turn + 1} 轮迭代] ==========")
+            max_turns = 5
+            
+            for turn in range(max_turns):
+                print(f"\n==================== 🔄 [第 {turn + 1} 轮迭代] ====================")
                 
-                # ------------------------------------------------
-                # 👷 Builder 行动阶段 (调用 b_session)
-                # ------------------------------------------------
-                print(f"👷 [Builder Brain - {BUILDER_MODEL_ID}] 正在干活...")
-                # ... 发起 builder_client 请求 ...
-                # ... 解析并执行 b_session.call_tool ...
-                # ... 使用 MemoryManager.append_and_prune 记录工具结果 ...
+                # ================================================
+                # 👷 阶段 1：Builder 闭眼摸黑干活
+                # ================================================
+                print(f"👷 [Builder Brain ({BUILDER_MODEL_ID})] 正在满头大汗地施工...")
+                while True: 
+                    await asyncio.sleep(2) 
+                    try:
+                        response = await builder_client.chat.completions.create(
+                            model=BUILDER_MODEL_ID, messages=builder_messages, tools=builder_tools, tool_choice="auto"
+                        )
+                    except Exception as e:
+                        print(f"❌ Builder API 请求失败: {e}"); break
+                        
+                    if not getattr(response, 'choices', None): break
+                    msg = response.choices[0].message
+                    
+                    safe_msg = {"role": "assistant", "content": msg.content or ""}
+                    if msg.tool_calls:
+                        safe_msg["tool_calls"] = [{"id": t.id, "type": "function", "function": {"name": t.function.name, "arguments": t.function.arguments}} for t in msg.tool_calls]
+                    MemoryManager.append_and_prune(builder_messages, safe_msg)
+                    
+                    if not msg.tool_calls:
+                        print(f"👷 [Builder 汇报]:\n{msg.content}")
+                        break
+                        
+                    for tool_call in msg.tool_calls:
+                        func_name = tool_call.function.name
+                        func_args = json.loads(tool_call.function.arguments)
+                        print(f"  ⚡ Builder 挥舞铲子 -> {func_name} {func_args}")
+                        try:
+                            mcp_res = await b_session.call_tool(func_name, arguments=func_args)
+                            res_text = mcp_res.content[0].text
+                        except Exception as e:
+                            res_text = f"失败: {str(e)}"
+                        MemoryManager.append_and_prune(builder_messages, {"role": "tool", "tool_call_id": tool_call.id, "name": func_name, "content": res_text})
 
-                # ------------------------------------------------
-                # 🧐 Observer 视察阶段 (调用 o_session)
-                # ------------------------------------------------
-                print(f"\n🧐 [Observer Brain - {OBSERVER_MODEL_ID}] 正在拍照视察...")
-                # ... Observer 发起请求 ...
-                # ... 决定调用 render_camera_view 拍照 ...
-                # ... 将本地生成的图片转成 Base64 ...
-                # ... 使用 MemoryManager.append_and_prune 将最新的现场照片喂给 Observer ...
+
+                # ================================================
+                # 🧐 阶段 2：Observer 睁眼多模态视察
+                # ================================================
+                print(f"\n🧐 [Observer Brain ({OBSERVER_MODEL_ID})] 提着单反和卷尺进入了现场...")
+                MemoryManager.append_and_prune(observer_messages, {"role": "user", "content": "Builder 刚刚完成了一轮施工。请你立刻调用雷达和摄像机进行双重检查。"})
                 
-                # 命运的裁决...
+                feedback = ""
+                
+                while True: 
+                    await asyncio.sleep(2) 
+                    try:
+                        response = await observer_client.chat.completions.create(
+                            model=OBSERVER_MODEL_ID, messages=observer_messages, tools=observer_tools, tool_choice="auto"
+                        )
+                    except Exception as e:
+                        print(f"❌ Observer API 请求失败: {e}"); break
+                        
+                    if not getattr(response, 'choices', None): break
+                    msg = response.choices[0].message
+                    
+                    safe_msg = {"role": "assistant", "content": msg.content or ""}
+                    if msg.tool_calls:
+                        safe_msg["tool_calls"] = [{"id": t.id, "type": "function", "function": {"name": t.function.name, "arguments": t.function.arguments}} for t in msg.tool_calls]
+                    MemoryManager.append_and_prune(observer_messages, safe_msg)
+                    
+                    if not msg.tool_calls:
+                        feedback = msg.content
+                        print(f"🧐 [Observer 判定报告]:\n{feedback}")
+                        break
+                        
+                    has_new_photo = False
+                    
+                    # 执行 Observer 的检查工具
+                    for tool_call in msg.tool_calls:
+                        func_name = tool_call.function.name
+                        print(f"  📡 Observer 启动设备 -> {func_name}...")
+                        try:
+                            func_args = json.loads(tool_call.function.arguments)
+                            mcp_res = await o_session.call_tool(func_name, arguments=func_args)
+                            res_text = mcp_res.content[0].text
+                        except Exception as e:
+                            res_text = f"扫描失败: {str(e)}"
+                            
+                        MemoryManager.append_and_prune(observer_messages, {"role": "tool", "tool_call_id": tool_call.id, "name": func_name, "content": res_text})
+                        
+                        # 📸 核心逻辑：视觉劫持！如果发现拍了照，准备把照片塞进大模型脑子里
+                        if func_name == "render_camera_view" and "SUCCESS" in res_text:
+                            has_new_photo = True
+
+                    # 如果这回合拍了照，我们立刻补充一个 User 消息，把 Base64 照片怼到它脸上
+                    if has_new_photo:
+                        photo_path = os.path.join(Path(__file__).parent.parent, "assets", "renders", "current_view.png")
+                        if os.path.exists(photo_path):
+                            print("  🧬 正在将照片编码为视觉神经信号输入大模型...")
+                            base64_image = encode_image_to_base64(photo_path)
+                            MemoryManager.append_and_prune(observer_messages, {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": "📸 这是刚刚拍下的现场照片！请结合前面的 JSON 数据，告诉我你看到了什么？有没有穿模？"},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
+                                ]
+                            })
+
+
+                # ================================================
+                # ⚖️ 阶段 3：命运的裁决
+                # ================================================
+                if "[VERDICT: PASS]" in feedback:
+                    print("\n🎉🎉🎉 奇迹诞生！Observer 验收通过！完美的 3D 场景搭建完毕！")
+                    break
+                else:
+                    print("\n💥 验收不合格！Observer 发现严重缺陷，已将整改意见和严厉警告发回给 Builder！")
+                    MemoryManager.append_and_prune(builder_messages, {
+                        "role": "user", 
+                        "content": f"【最高级别警告】你的搭建被带有视觉能力的 Observer 打回！请务必根据它的现场图文质检报告，严格计算坐标并调用工具修改：\n{feedback}"
+                    })
 
 if __name__ == "__main__":
     asyncio.run(run_heterogeneous_agents())
