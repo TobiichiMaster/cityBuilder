@@ -6,124 +6,99 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
-
-# 自动添加项目根目录到Python路径，导入配置
+from memoryManager import MemoryManager
 sys.path.append(str(Path(__file__).parent.parent))
 from config import Config
 
-# 初始化 Qwen 大模型客户端
-llm_client = AsyncOpenAI(
-    api_key=Config.llm_api_key,
+# ==========================================
+# 🧠 1. 异构大模型客户端初始化
+# ==========================================
+# Builder 大脑：可以配置为本地 vLLM (例如 Qwen-VL 部署在本地的 8000 端口)
+builder_client = AsyncOpenAI(
+    api_key=os.getenv("BUILDER_API_KEY", "EMPTY"), # vLLM 通常不需要复杂的 key
+    base_url=os.getenv("BUILDER_BASE_URL", "http://localhost:8000/v1")
+)
+BUILDER_MODEL_ID = os.getenv("BUILDER_MODEL_ID", "qwen-vl-chat")
+
+# Observer 大脑：可以配置为云端最强多模态模型 (例如 ModelScope 的 qwen-vl-max)
+observer_client = AsyncOpenAI(
+    api_key=Config.llm_api_key, 
     base_url=Config.llm_base_url
 )
-MODEL_ID = Config.llm_model_id
+OBSERVER_MODEL_ID = Config.llm_model_id
 
-# 辅助函数：将 MCP 工具转换为 OpenAI 格式
-def format_mcp_tools_for_llm(mcp_tools):
-    formatted_tools = []
-    for tool in mcp_tools:
-        formatted_tools.append({
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.inputSchema 
-            }
-        })
-    return formatted_tools
 
-async def run_builder_agent():
-    print("🧠 正在通电... 唤醒 Builder 大脑...")
+
+
+
+# ==========================================
+# 🚀 3. 双核驱动主循环
+# ==========================================
+async def run_heterogeneous_agents():
+    print("🔋 正在启动异构双脑架构...")
     
-    # 定位 Server 脚本
-    server_script = os.path.join(Path(__file__).parent.parent, "mcp_server", "blender_mcp_server.py")
-    server_params = StdioServerParameters(command=Config.server_command, args=[server_script])
+    # 定义两个独立的 MCP Server 路径
+    mcp_dir = os.path.join(Path(__file__).parent.parent, "mcp_server")
+    builder_server_script = os.path.join(mcp_dir, "builder_mcp_server.py")
+    observer_server_script = os.path.join(mcp_dir, "observer_mcp_server.py")
 
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            print("✅ 与 Blender 的 MCP 神经连接已打通！")
+    # 配置启动参数
+    builder_params = StdioServerParameters(command=Config.server_command, args=[builder_server_script])
+    observer_params = StdioServerParameters(command=Config.server_command, args=[observer_server_script])
 
-            # 获取并转换工具
-            mcp_tools = (await session.list_tools()).tools
-            llm_tools = format_mcp_tools_for_llm(mcp_tools)
-            print(f"🛠️ 大脑已加载 {len(mcp_tools)} 个可用工具: {[t.name for t in mcp_tools]}\n")
-
-            # ========================================================
-            # 注入灵魂：System Prompt 与用户需求
-            # ========================================================
-            messages = [
-                {
-                    "role": "system", 
-                    "content": (
-                        "你是出色的 3D 场景搭建师。你拥有控制 Blender 的能力。"
-                        "规则："
-                        "1. 在开始任何搭建前，必须先调用 initialize_blender_scene 清理场景。"
-                        "2. 你的单位是米(m)。"
-                        "3. 遇到复杂物体，你需要思考它的结构。例如桌子由1个桌面和4条腿组成，你需要多次调用创建和形变工具。"
-                        "4. 一旦你认为场景搭建完成，请向用户汇报你搭建的思路。"
-                    )
-                }
-            ]
+    # 🕸️ 建立双重网络连接 (使用 contextlib.AsyncExitStack 可以更优雅，这里用嵌套方便理解)
+    print("🔗 正在建立双 MCP 物理隔离通道...")
+    async with stdio_client(builder_params) as (b_read, b_write), \
+               stdio_client(observer_params) as (o_read, o_write):
+        
+        async with ClientSession(b_read, b_write) as b_session, \
+                   ClientSession(o_read, o_write) as o_session:
             
-            # 咱们给 Agent 出的考卷
-            user_task = "请帮我搭建一个四个脚的方桌，放桌上要放置一个用球体代表的苹果，方桌的一侧放置一个使用多个立方体搭建的椅子（无靠背）"
-            print(f"👤 用户需求: {user_task}\n")
-            messages.append({"role": "user", "content": user_task})
+            await b_session.initialize()
+            await o_session.initialize()
+            print("✅ 双路 MCP 握手成功！")
 
-            # ========================================================
-            # Agent 主循环 (ReAct 模式: 思考 -> 调用工具 -> 获取反馈 -> 继续思考)
-            # ========================================================
-            max_turns = 30 # 设定最多允许它思考和动作 10 个回合
+            # 独立获取工具
+            builder_tools_raw = (await b_session.list_tools()).tools
+            observer_tools_raw = (await o_session.list_tools()).tools
             
-            for turn in range(max_turns):
-                print(f"🔄 [第 {turn + 1} 回合] Builder 正在思考...")
+            # 将工具格式化为 OpenAI 格式 (需要你自己把之前的 format_mcp_tools_for_llm 函数补进来)
+            # builder_tools = format_mcp_tools_for_llm(builder_tools_raw)
+            # observer_tools = format_mcp_tools_for_llm(observer_tools_raw)
+
+            # 初始化系统提示词 (根据需要调整，加入关于处理图片的指令)
+            builder_messages = [{"role": "system", "content": "你是建造者... (支持识图)"}]
+            observer_messages = [{"role": "system", "content": "你是质检员... (支持识图)"}]
+
+            # 用户的单幅图像重建需求
+            # 在最终项目中，这里会附带第一张用户输入的参考图 Base64
+            user_task = "请根据参考图，在 Blender 里搭建场景..."
+            MemoryManager.append_and_prune(builder_messages, {"role": "user", "content": user_task})
+
+            # ==========================================
+            # 🔄 异构迭代循环
+            # ==========================================
+            for turn in range(5):
+                print(f"\n========== 🔄 [第 {turn + 1} 轮迭代] ==========")
                 
-                # 发请求给大模型
-                response = await llm_client.chat.completions.create(
-                    model=MODEL_ID,
-                    messages=messages,
-                    tools=llm_tools,
-                    tool_choice="auto"
-                )
+                # ------------------------------------------------
+                # 👷 Builder 行动阶段 (调用 b_session)
+                # ------------------------------------------------
+                print(f"👷 [Builder Brain - {BUILDER_MODEL_ID}] 正在干活...")
+                # ... 发起 builder_client 请求 ...
+                # ... 解析并执行 b_session.call_tool ...
+                # ... 使用 MemoryManager.append_and_prune 记录工具结果 ...
+
+                # ------------------------------------------------
+                # 🧐 Observer 视察阶段 (调用 o_session)
+                # ------------------------------------------------
+                print(f"\n🧐 [Observer Brain - {OBSERVER_MODEL_ID}] 正在拍照视察...")
+                # ... Observer 发起请求 ...
+                # ... 决定调用 render_camera_view 拍照 ...
+                # ... 将本地生成的图片转成 Base64 ...
+                # ... 使用 MemoryManager.append_and_prune 将最新的现场照片喂给 Observer ...
                 
-                assistant_msg = response.choices[0].message
-                messages.append(assistant_msg) # 把模型的回复记入记忆
-                
-                # 情况 A：模型决定调用工具
-                if assistant_msg.tool_calls:
-                    for tool_call in assistant_msg.tool_calls:
-                        func_name = tool_call.function.name
-                        # 解析大模型生成的参数
-                        func_args = json.loads(tool_call.function.arguments)
-                        
-                        print(f"⚡ [Builder 执行]: 调用 {func_name}")
-                        print(f"   [参数]: {func_args}")
-                        
-                        # 真实调用 MCP Server
-                        try:
-                            mcp_result = await session.call_tool(func_name, arguments=func_args)
-                            result_text = mcp_result.content[0].text
-                        except Exception as e:
-                            result_text = f"工具执行异常: {str(e)}"
-                            
-                        print(f"🖥️ [Blender 反馈]: {result_text}\n")
-                        
-                        # 把工具执行的结果“喂”回给大模型，让它知道刚刚那一铲子下去挖出了啥
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": func_name,
-                            "content": result_text
-                        })
-                        
-                # 情况 B：模型没有调用工具，而是直接说话（通常意味着任务完成了，或者它卡住了）
-                else:
-                    print(f"🎉 [Builder 汇报]: {assistant_msg.content}\n")
-                    print("✅ 任务执行完毕，退出循环。")
-                    break
-            else:
-                print("⚠️ 达到了最大执行回合数，被强制叫停。")
+                # 命运的裁决...
 
 if __name__ == "__main__":
-    asyncio.run(run_builder_agent())
+    asyncio.run(run_heterogeneous_agents())
