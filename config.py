@@ -20,9 +20,14 @@ class Config:
     observer_api_key: Optional[str] = os.getenv("OBSERVER_API_KEY","")
     observer_base_url: Optional[str] = os.getenv("OBSERVER_BASE_URL","")
     observer_model_id: Optional[str] = os.getenv("OBSERVER_MODEL_ID","")
+    # Processer大模型配置
+    processer_api_key: Optional[str] = os.getenv("PROCESSER_API_KEY","")
+    processer_base_url: Optional[str] = os.getenv("PROCESSER_BASE_URL","")
+    processer_model_id: Optional[str] = os.getenv("PROCESSER_MODEL_ID","")
     # Blender配置
     blender_path: str = os.getenv("BLENDER_PATH")
-    
+    # 地址配置
+    assets_path: str = os.getenv("ASSETS_PATH","")
     # MCP配置
     server_command: str = "python"
     server_args: list = None
@@ -42,6 +47,14 @@ class Config:
             raise ValueError("环境变量中未配置OBSERVER_BASE_URL，请检查.env文件")
         if not cls.observer_model_id:
             raise ValueError("环境变量中未配置OBSERVER_MODEL_ID，请检查.env文件")
+        if not cls.processer_api_key:
+            raise ValueError("环境变量中未配置PROCESSER_API_KEY，请检查.env文件")
+        if not cls.processer_base_url:
+            raise ValueError("环境变量中未配置PROCESSER_BASE_URL，请检查.env文件")
+        if not cls.processer_model_id:
+            raise ValueError("环境变量中未配置PROCESSER_MODEL_ID，请检查.env文件")
+        if not cls.assets_path:
+            raise ValueError("环境变量中未配置ASSETS_PATH，请检查.env文件")
         if not cls.blender_path:
             raise ValueError("环境变量中未配置BLENDER_PATH，请检查.env文件")
 
