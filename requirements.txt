@@ -3,3 +3,5 @@ blender
 mcp
 python-dotenv
 openai
+
+pip install git+https://github.com/facebookresearch/segment-anything.git

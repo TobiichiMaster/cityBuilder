@@ -17,7 +17,7 @@ blender_mcp_server
 
 
 #环境配置
-mcp = FastMCP("Blender_tool_server")
+mcp = FastMCP("Observer_MCP_Server")
 
 #脚本路径
 server_dir = os.path.dirname(os.path.abspath(__file__)) #当前mcp服务器文件夹位置

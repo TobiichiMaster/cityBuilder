@@ -12,12 +12,14 @@ env_path = BASE_DIR / ".env"
 load_dotenv(dotenv_path=env_path)
 # 创建配置类
 class Config:
-    # 大模型配置
-    llm_api_key: str = os.getenv("LLM_API_KEY", "local")
-    llm_base_url: Optional[str] = os.getenv("LLM_BASE_URL", "")
-    llm_model_id: Optional[str] = os.getenv("LLM_MODEL_ID", "")
-    vllm_model_id: Optional[str] = os.getenv("VLLM_MODEL_ID","")
-    
+    # Builder大模型配置
+    builder_api_key: str = os.getenv("BUILDER_API_KEY", "local")
+    builder_base_url: Optional[str] = os.getenv("BUILDER_BASE_URL", "")
+    builder_model_id: Optional[str] = os.getenv("BUILDER_MODEL_ID", "")
+    # Observer大模型配置
+    observer_api_key: Optional[str] = os.getenv("OBSERVER_API_KEY","")
+    observer_base_url: Optional[str] = os.getenv("OBSERVER_BASE_URL","")
+    observer_model_id: Optional[str] = os.getenv("OBSERVER_MODEL_ID","")
     # Blender配置
     blender_path: str = os.getenv("BLENDER_PATH")
     
@@ -28,14 +30,18 @@ class Config:
     # 🔥 这里必须缩进！我帮你修好了
     @classmethod
     def validate(cls):
-        if not cls.llm_api_key:
-            raise ValueError("环境变量中未配置API_KEY，请检查.env文件")
-        if not cls.llm_base_url:
-            raise ValueError("环境变量中未配置BASE_URL，请检查.env文件")
-        if not cls.llm_model_id:
-            raise ValueError("环境变量中未配置LLM_MODEL_ID，请检查.env文件")
-        if not cls.vllm_model_id:
-            raise ValueError("环境变量中未配置VLLM_MODEL_ID，请检查.env文件")
+        if not cls.builder_api_key:
+            raise ValueError("环境变量中未配置BUILDER_API_KEY，请检查.env文件")
+        if not cls.builder_base_url:
+            raise ValueError("环境变量中未配置BUILDER_BASE_URL，请检查.env文件")
+        if not cls.builder_model_id:
+            raise ValueError("环境变量中未配置BUILDER_MODEL_ID，请检查.env文件")
+        if not cls.observer_api_key:
+            raise ValueError("环境变量中未配置OBSERVER_API_KEY，请检查.env文件")
+        if not cls.observer_base_url:
+            raise ValueError("环境变量中未配置OBSERVER_BASE_URL，请检查.env文件")
+        if not cls.observer_model_id:
+            raise ValueError("环境变量中未配置OBSERVER_MODEL_ID，请检查.env文件")
         if not cls.blender_path:
             raise ValueError("环境变量中未配置BLENDER_PATH，请检查.env文件")
 

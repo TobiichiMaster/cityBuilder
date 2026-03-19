@@ -17,7 +17,7 @@ blender_mcp_server
 
 
 #环境配置
-mcp = FastMCP("Blender_tool_server")
+mcp = FastMCP("Builder_MCP_Server")
 
 #脚本路径
 server_dir = os.path.dirname(os.path.abspath(__file__)) #当前mcp服务器文件夹位置
@@ -51,36 +51,45 @@ def initialize_blender_scene() -> str:
         return f"[Error]: 系统调用异常，检查环境变量,{str(e)}"
 
 @mcp.tool()
-def create_blender_object(obj_type: str, name: str, location: list[float] = [0.0, 0.0, 0.0]) -> str:
+def create_blender_object(obj_type: str, name: str, location: list[float] = [0.0, 0.0, 0.0], asset_name: str = "") -> str:
     """
     工具名：创建 3D 物体
-    描述：在当前场景的指定位置创建一个基础 3D 物体。
+    描述：在场景中创建一个基础几何体，或者从 assets/models/ 目录中导入一个 GLB 资产。
     参数：
-    - obj_type: 物体类型，必须是 "CUBE" (立方体), "SPHERE" (球体), 或 "MONKEY" (猴头)
+    - obj_type: 物体类型。可选: "CUBE", "SPHERE", "MONKEY" (几何体) 或 "ASSET" (导入外部GLB)
     - name: 物体的唯一命名
-    - location: 包含三个浮点数的列表，代表 [X, Y, Z] 坐标，默认为 [0.0, 0.0, 0.0]
+    - location: 坐标 [X, Y, Z]
+    - asset_name: 当 obj_type 为 "ASSET" 时，必须提供资产文件名 (例如 "apple.glb")，不带路径。
     """
-    # 1. 定位需要执行的脚本和场景文件
-    script_path = os.path.join(blender_scripts_dir, "create_object.py")
+    # ... 原有的路径拼接逻辑保持不变 ...
+    # 我们需要写一个新的 blender_script 叫做 import_asset.py，并把 asset_name 传给它
+    script_path = os.path.join(blender_scripts_dir, "create_object.py") # 咱们可以直接升级原有的脚本
     scene_path = os.path.join(root_dir, "assets", "scenes", "output.blend")
     
-    print(f"[MCP Server]: 接收到指令，准备在 {location} 创建 {obj_type}，命名为 {name}")
+    # 构造命令行参数
+    blender_args = [blender_path, 
+    "-b", scene_path, 
+    "-P", script_path, 
+    "--", obj_type, name, 
+    str(location[0]), 
+    str(location[1]), 
+    str(location[2])
+    ]
+    
+    # 【核心修改】：如果是资产类型，把 asset_name 塞进去
+    if obj_type == "ASSET":
+        if not asset_name: return "[Error]: 创建ASSET类型必须提供 asset_name 参数"
+        # 资产的绝对路径是固定的：root_dir/assets/models/asset_name
+        asset_full_path = os.path.join(root_dir, "assets", "models", asset_name)
+        if not os.path.exists(asset_full_path): return f"[Error]: 找不到资产文件: {asset_full_path}"
+        blender_args.append(asset_full_path) # 把这个路径传给脚本的 argv[6]
 
+    # ... 原有的 subprocess.run 逻辑保持不变 ...
     try:
         # 2. 核心！构建 subprocess 命令。
         # 逻辑是：启动 Blender -> 在后台 (-b) 打开现有工程文件 -> 执行脚本 (-P) -> 传入自定义参数 (--)
         result = subprocess.run(
-            [
-                blender_path, 
-                "-b", scene_path,      # 极其关键：必须先打开我们 init 的场景，否则会在默认场景里乱建
-                "-P", script_path,     # 挂载你的 bpy 脚本
-                "--",                  # 分隔符：告诉 Blender 后面的参数是给 Python 脚本的，不是给 Blender 系统的
-                obj_type,              # 对应脚本里的 args[0]
-                name,                  # 对应脚本里的 args[1]
-                str(location[0]),      # 对应脚本里的 args[2] (注意 subprocess 只能传字符串，所以要强转)
-                str(location[1]),      # 对应脚本里的 args[3]
-                str(location[2])       # 对应脚本里的 args[4]
-            ],
+            blender_args,
             capture_output=True,
             text=True,
             check=True
