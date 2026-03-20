@@ -11,7 +11,7 @@ from config import Config,BASE_DIR
 from tools.file_manager import load_stacked_mask_pairs, rename_and_move_asset
 from tools.mask_operations import merge_npy_masks, save_merged_asset
 from tools.vlm_client import ask_vlm_for_label
-
+from tools.sam3d_client import Sam3DClient
 # 地址配置
 assets_path = Config.assets_path
 masks_path = os.path.join(assets_path,"masks")
@@ -129,6 +129,34 @@ class VisionProcesserAgent:
                     print(f"  ✅ 单体资产已导出: {os.path.basename(new_npy)}")
 
         print("\n🎉 Vision Processer 处理完毕，所有清洗后的 NPY/PNG 资产已放入输出目录！")
+
+        # ================== 新增：3D 升维阶段 ==================
+        print("\n🚀 开始将清洗后的 2D 资产升维至 3D (调用 SAM3D)...")
+        from tools.sam3d_client import Sam3DClient
+        
+        # 指向你刚刚找到的 pipeline.yaml
+        config_path = os.path.join(BASE_DIR, "utils", "sam3d", "checkpoints", "hf", "pipeline.yaml")
+        
+        try:
+            sam3d = Sam3DClient(config_path)
+            
+            # 遍历输出目录，找到刚才处理好的所有 .npy 文件
+            for filename in os.listdir(self.output_dir):
+                # 排除掉最初的合并大文件，只处理独立的资产
+                if filename.endswith(".npy") and "top_objects" not in filename:
+                    mask_npy = os.path.join(self.output_dir, filename)
+                    out_glb = os.path.join(self.output_dir, filename.replace(".npy", ".glb"))
+                    
+                    # 生成 3D 模型
+                    sam3d.generate_3d_asset(
+                        original_image_path=self.original_image_path, 
+                        mask_npy_path=mask_npy, 
+                        output_glb_path=out_glb
+                    )
+            print("\n🎊 全流程彻底完成！所有的 3D 资产 (.glb) 和坐标信息 (.json) 已准备就绪！")
+            
+        except Exception as e:
+            print(f"\n❌ 3D 生成阶段出现错误: {e}")
 
 
 # ================== 测试入口 ==================
