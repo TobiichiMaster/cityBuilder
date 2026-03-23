@@ -125,7 +125,7 @@ async def run_heterogeneous_agents():
             ]
             
             MemoryManager.append_and_prune(builder_messages, {"role": "user", "content": user_task})
-            max_turns = 5
+            max_turns = 10
             
             for turn in range(max_turns):
                 print(f"\n==================== 🔄 [第 {turn + 1} 轮迭代] ====================")
