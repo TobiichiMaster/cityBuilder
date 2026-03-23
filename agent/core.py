@@ -76,18 +76,20 @@ async def run_heterogeneous_agents():
             o_tools_raw = (await o_session.list_tools()).tools
             
             # 严格控制白名单
-            builder_tools = format_mcp_tools_for_llm(b_tools_raw, ["initialize_blender_scene", "create_blender_object", "move_object", "rotate_object", "scale_object"])
+            builder_tools = format_mcp_tools_for_llm(b_tools_raw, ["initialize_blender_scene", "create_blender_object", "move_object", "rotate_object", "scale_object","get_available_assets"])
             observer_tools = format_mcp_tools_for_llm(o_tools_raw, ["get_scene_status", "render_camera_view"])
 
             # 初始化灵魂记忆
             builder_messages = [{
                 "role": "system", 
                 "content": (
-                    "你是 3D 场景建造者(Builder Brain)。"
-                    "1. 第一步必须调用 initialize_blender_scene。"
-                    "2. 你只能凭数学直觉进行搭建，尽最大努力把位置摆对。"
-                    "3. 搭建完成后，向 Observer 汇报你的操作，交出控制权。"
-                    "4. 对于 Observer 给出的绝对坐标修正要求，必须立刻无条件执行（调用 move_object / scale_object 等）！"
+                    "你是首席 3D 场景建造专家 (Builder Brain)，具备视觉能力。\n"
+                    "你的工作流：\n"
+                    "1. 必须先调用 initialize_blender_scene 初始化场景。\n"
+                    "2. 必须调用 get_available_assets 获取当前所有由 SAM3D 生成的 3D 资产及其绝对坐标。\n"
+                    "3. 遍历这些资产，调用 create_blender_object (obj_type设为'ASSET') 将它们一一导入。导入时无需传入 location 参数，底层会自动根据 JSON 坐标对齐！\n"
+                    "4. 观察我发给你的【原始参考图】，对比你导入后的 3D 空间关系。如果发现有穿模、悬空或位置不对，通过 move_object 等工具进行微调。\n"
+                    "5. 搭建完毕后，向 Observer 汇报你的操作进度。"
                 )
             }]
             
@@ -103,9 +105,26 @@ async def run_heterogeneous_agents():
                 )
             }]
 
-            user_task = "请帮我搭建一个四个脚的方桌，放桌上要放置一个用球体代表的苹果，方桌的一侧放置一个使用多个立方体搭建的椅子（无靠背）。"
-            MemoryManager.append_and_prune(builder_messages, {"role": "user", "content": user_task})
+            print("\n🧬 正在将原始图像编码为视觉神经信号，注入 Builder 大脑...")
+            # 指向你用来生成掩码的那张原图
+            original_image_path = os.path.join(Path(__file__).parent.parent, "assets", "source", "9.png")
+            print(original_image_path)
+            base64_image = encode_image_to_base64(original_image_path)
 
+            user_task = [
+                {
+                    "type": "text", 
+                    "text": "这是一张我们需要重建的原始参考图。我已经使用前置流水线提取了图片中的物体，并为你生成了 3D 资产（存放在本地）。请你结合这张图片，开始执行你的场景重组任务！"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_image}"
+                    }
+                }
+            ]
+            
+            MemoryManager.append_and_prune(builder_messages, {"role": "user", "content": user_task})
             max_turns = 5
             
             for turn in range(max_turns):

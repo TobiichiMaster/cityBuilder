@@ -166,7 +166,7 @@ if __name__ == "__main__":
     
     agent = VisionProcesserAgent(
         input_dir=masks_path,
-        output_dir="assets/processed_assets",
+        output_dir="assets/models",
         original_image_path=ORI_IMAGE
     )
     
