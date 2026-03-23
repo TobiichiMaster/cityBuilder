@@ -83,7 +83,7 @@ def create_blender_object(obj_type: str, name: str, location: list[float] = [0.0
         # 资产的绝对路径是固定的：root_dir/assets/models/asset_name
         asset_full_path = os.path.join(root_dir, "assets", "models", asset_name)
         if not os.path.exists(asset_full_path): return f"[Error]: 找不到资产文件: {asset_full_path}"
-        blender_args.append(asset_full_path) # 把这个路径传给脚本的 argv[6]
+        blender_args.append(asset_full_path) # 把这个路径传给脚本的 argv[5]
 
     # ... 原有的 subprocess.run 逻辑保持不变 ...
     try:
@@ -95,7 +95,8 @@ def create_blender_object(obj_type: str, name: str, location: list[float] = [0.0
             text=True,
             check=True
         )
-        return f"[MCP Server]: 成功创建物体 {name}，已保存至场景。"
+        # 把 Blender 的底层日志 (result.stdout) 一起打包送回去！
+        return f"[MCP Server]: 成功创建物体 {name}，已保存至场景。\n--- Blender 底层日志 ---\n{result.stdout.strip()}"
         
     except subprocess.CalledProcessError as e:
         # 如果你写的 create_object.py 里面触发了 sys.exit(1)，就会被这里捕获
