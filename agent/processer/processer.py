@@ -8,22 +8,24 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from config import Config,BASE_DIR
 
 # 引入我们写好的底层工具
-from tools.file_manager import load_stacked_mask_pairs, rename_and_move_asset
-from tools.mask_operations import merge_npy_masks, save_merged_asset
-from tools.vlm_client import ask_vlm_for_label
-from tools.sam3d_client import Sam3DClient
+# 引入我们写好的底层工具 (使用基于根目录的绝对路径)
+from agent.processer.tools.file_manager import load_stacked_mask_pairs, rename_and_move_asset
+from agent.processer.tools.mask_operations import merge_npy_masks, save_merged_asset
+from agent.processer.tools.vlm_client import ask_vlm_for_label
+from agent.processer.tools.sam3d_client import Sam3DClient
 # 地址配置
 assets_path = Config.assets_path
 masks_path = os.path.join(assets_path,"masks")
 
 class VisionProcesserAgent:
-    def __init__(self, input_dir="assets/masks", output_dir="assets/processed_assets", original_image_path=None):
+    def __init__(self, input_dir="assets/masks", output_dir="assets/processed_assets", original_image_path=None, sam3d_python_exe=None):
         self.input_dir = os.path.join(BASE_DIR, input_dir)
         self.output_dir = os.path.join(BASE_DIR, output_dir)
         if original_image_path:
             self.original_image_path = os.path.join(BASE_DIR, original_image_path)
         else:
             self.original_image_path = None
+        self.sam3d_python_exe = sam3d_python_exe
 
         # 挂载配置中的 Observer 大模型参数 (专门用于视觉识别)
         self.vlm_api_key = Config.processer_api_key
@@ -132,13 +134,14 @@ class VisionProcesserAgent:
 
         # ================== 新增：3D 升维阶段 ==================
         print("\n🚀 开始将清洗后的 2D 资产升维至 3D (调用 SAM3D)...")
-        from tools.sam3d_client import Sam3DClient
+        from agent.processer.tools.sam3d_client import Sam3DClient
         
         # 指向你刚刚找到的 pipeline.yaml
         config_path = os.path.join(BASE_DIR, "utils", "sam3d", "checkpoints", "hf", "pipeline.yaml")
         
         try:
-            sam3d = Sam3DClient(config_path)
+            # 在这里把路径传给 Client
+            sam3d = Sam3DClient(config_path, python_exe=self.sam3d_python_exe)
             
             # 遍历输出目录，找到刚才处理好的所有 .npy 文件
             for filename in os.listdir(self.output_dir):

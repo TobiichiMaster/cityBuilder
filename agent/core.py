@@ -7,7 +7,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
-from memoryManager import MemoryManager
+from agent.memoryManager import MemoryManager
 
 sys.path.append(str(Path(__file__).parent.parent))
 from config import Config
@@ -56,7 +56,7 @@ def encode_image_to_base64(image_path):
 # ==========================================
 # 🚀 3. 双核驱动主循环
 # ==========================================
-async def run_heterogeneous_agents():
+async def run_heterogeneous_agents(image_path: str):
     print("🔋 正在启动异构多模态双脑架构...")
     
     mcp_dir = os.path.join(Path(__file__).parent.parent, "mcp_server")
@@ -107,9 +107,7 @@ async def run_heterogeneous_agents():
 
             print("\n🧬 正在将原始图像编码为视觉神经信号，注入 Builder 大脑...")
             # 指向你用来生成掩码的那张原图
-            original_image_path = os.path.join(Path(__file__).parent.parent, "assets", "source", "9.png")
-            print(original_image_path)
-            base64_image = encode_image_to_base64(original_image_path)
+            base64_image = encode_image_to_base64(image_path)
 
             user_task = [
                 {
@@ -245,4 +243,6 @@ async def run_heterogeneous_agents():
                     })
 
 if __name__ == "__main__":
-    asyncio.run(run_heterogeneous_agents())
+    # 仅用于在 core.py 单独测试时使用。正式运行请使用 main.py 启动。
+    test_image = os.path.join(Path(__file__).parent.parent, "assets", "source", "9.png")
+    asyncio.run(run_heterogeneous_agents(test_image))

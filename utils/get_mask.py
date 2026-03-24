@@ -4,6 +4,7 @@ import torch
 import os
 from PIL import Image
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+import argparse
 
 def filter_top_k_masks(raw_masks, top_k=4, min_area=2000, min_new_area_ratio=0.6):
     """
@@ -105,18 +106,19 @@ def extract_and_save_masks(image_path, output_dir, top_k=4, model_type="vit_h", 
         print(f"\n全部处理完成！.npy 文件已保存，形状为: {stacked_masks.shape} (N, H, W)")
 
 if __name__ == "__main__":
-    # ================= 配置参数 =================
-    IMAGE_PATH = "/nas/lihaoze/cityBuilder/assets/source/9.png"          # 替换为你的输入图片路径
-    OUTPUT_DIR = "/nas/lihaoze/cityBuilder/assets/masks"       # 输出目录
-    TOP_K = 15                                # 强制保留的 mask 数量 (例如3个房子+1个地面)
-    MODEL_TYPE = "vit_h"
-    CHECKPOINT_PATH = "/nas/lihaoze/cityBuilder/utils/segment-anything/sam_vit_h_4b8939.pth"
-    # ============================================
+    # 使用 argparse 接收从 main.py 传过来的动态参数
+    parser = argparse.ArgumentParser(description="SAM 图像分割 Worker")
+    parser.add_argument("--image", required=True, help="输入原图的绝对路径")
+    parser.add_argument("--output", required=True, help="输出 masks 的绝对路径")
+    parser.add_argument("--top_k", type=int, default=15, help="保留的最大 mask 数量")
+    parser.add_argument("--checkpoint", required=True, help="SAM 权重文件的绝对路径")
+    args = parser.parse_args()
 
+    # 执行核心逻辑
     extract_and_save_masks(
-        image_path=IMAGE_PATH, 
-        output_dir=OUTPUT_DIR, 
-        top_k=TOP_K,
-        model_type=MODEL_TYPE, 
-        checkpoint_path=CHECKPOINT_PATH
+        image_path=args.image, 
+        output_dir=args.output, 
+        top_k=args.top_k,
+        model_type="vit_h", 
+        checkpoint_path=args.checkpoint
     )
