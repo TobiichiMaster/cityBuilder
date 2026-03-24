@@ -61,20 +61,32 @@ elif obj_type == "ASSET":
     for i, m in enumerate(meshes):
         m.name = f"{obj_name}_mesh_{i}"
 
-    # === 核心修复 4：穿透 Empty 层级，计算真实的全局包围盒 ===
-    bpy.context.view_layer.update() # 强制更新矩阵，防止坐标计算错误
+    # === 核心修复 4：穿透 Empty 层级，计算真实包围盒并【强制几何居中】 ===
+    bpy.context.view_layer.update() # 强制更新矩阵
     if meshes:
         min_coords = [float('inf')] * 3
         max_coords = [float('-inf')] * 3
         for m in meshes:
-            # bbox 必须乘以 matrix_world 才能得到真实的绝对长宽高
             bbox = [m.matrix_world @ mathutils.Vector(corner) for corner in m.bound_box]
             for corner in bbox:
                 for i in range(3):
                     min_coords[i] = min(min_coords[i], corner[i])
                     max_coords[i] = max(max_coords[i], corner[i])
                     
-        # 提取真实尺寸并进行 1m 安全归一化
+        # 1. 计算出这个资产真实的、视觉上的“几何中心”
+        center_offset = [
+            (min_coords[0] + max_coords[0]) / 2.0,
+            (min_coords[1] + max_coords[1]) / 2.0,
+            (min_coords[2] + max_coords[2]) / 2.0
+        ]
+        
+        # 2. 强制将所有网格反向偏移，让它们的几何中心死死锚定在 (0,0,0)
+        for m in meshes:
+            m.location.x -= center_offset[0]
+            m.location.y -= center_offset[1]
+            m.location.z -= center_offset[2]
+            
+        # 3. 提取真实尺寸并进行 1m 安全归一化 (保持不变)
         max_dim = max([max_coords[i] - min_coords[i] for i in range(3)])
         if max_dim > 0:
             scale_factor = 1.0 / max_dim
