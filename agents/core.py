@@ -7,22 +7,25 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.session import ClientSession
-from agent.memoryManager import MemoryManager
 
-sys.path.append(str(Path(__file__).parent.parent))
+# 🌟 修改点 1：包名从 agent 变成了 agents
+from agents.memoryManager import MemoryManager 
+
+# 自动将项目根目录加入环境变量
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config import Config
 
 # ==========================================
 # 🧠 1. 异构大模型客户端初始化
 # ==========================================
-# Builder 大脑 (干活的苦力，可以用稍微便宜/本地的模型，只要能写 JSON 就行)
+# Builder 大脑 (干活的苦力)
 builder_client = AsyncOpenAI(
     api_key=Config.builder_api_key,
     base_url=Config.builder_base_url
 )
 BUILDER_MODEL_ID = Config.builder_model_id
 
-# Observer 大脑 (冷酷的监工，【必须】使用最强的多模态视觉大模型，如 qwen-vl-max 或 Kimi-Vision)
+# Observer 大脑 (冷酷的监工)
 observer_client = AsyncOpenAI(
     api_key=Config.observer_api_key, 
     base_url=Config.observer_base_url
@@ -59,7 +62,9 @@ def encode_image_to_base64(image_path):
 async def run_heterogeneous_agents(image_path: str):
     print("🔋 正在启动异构多模态双脑架构...")
     
-    mcp_dir = os.path.join(Path(__file__).parent.parent, "mcp_server")
+    # 🌟 修改点 2：更新 MCP Server 的路径定位，指向新的 tools/mcp_servers 目录
+    mcp_dir = os.path.join(Path(__file__).resolve().parent.parent, "tools", "mcp_servers")
+    
     b_params = StdioServerParameters(command=Config.server_command, args=[os.path.join(mcp_dir, "builder_mcp_server.py")])
     o_params = StdioServerParameters(command=Config.server_command, args=[os.path.join(mcp_dir, "observer_mcp_server.py")])
 
@@ -106,7 +111,6 @@ async def run_heterogeneous_agents(image_path: str):
             }]
 
             print("\n🧬 正在将原始图像编码为视觉神经信号，注入 Builder 大脑...")
-            # 指向你用来生成掩码的那张原图
             base64_image = encode_image_to_base64(image_path)
 
             user_task = [
@@ -164,7 +168,6 @@ async def run_heterogeneous_agents(image_path: str):
                             res_text = f"失败: {str(e)}"
                         MemoryManager.append_and_prune(builder_messages, {"role": "tool", "tool_call_id": tool_call.id, "name": func_name, "content": res_text})
 
-
                 # ================================================
                 # 🧐 阶段 2：Observer 睁眼多模态视察
                 # ================================================
@@ -210,13 +213,13 @@ async def run_heterogeneous_agents(image_path: str):
                             
                         MemoryManager.append_and_prune(observer_messages, {"role": "tool", "tool_call_id": tool_call.id, "name": func_name, "content": res_text})
                         
-                        # 📸 核心逻辑：视觉劫持！如果发现拍了照，准备把照片塞进大模型脑子里
+                        # 📸 视觉劫持逻辑
                         if func_name == "render_camera_view" and "SUCCESS" in res_text:
                             has_new_photo = True
 
-                    # 如果这回合拍了照，我们立刻补充一个 User 消息，把 Base64 照片怼到它脸上
+                    # 补充照片给大模型
                     if has_new_photo:
-                        photo_path = os.path.join(Path(__file__).parent.parent, "assets", "renders", "current_view.png")
+                        photo_path = os.path.join(Path(__file__).resolve().parent.parent, "assets", "renders", "current_view.png")
                         if os.path.exists(photo_path):
                             print("  🧬 正在将照片编码为视觉神经信号输入大模型...")
                             base64_image = encode_image_to_base64(photo_path)
@@ -227,7 +230,6 @@ async def run_heterogeneous_agents(image_path: str):
                                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
                                 ]
                             })
-
 
                 # ================================================
                 # ⚖️ 阶段 3：命运的裁决
@@ -243,6 +245,6 @@ async def run_heterogeneous_agents(image_path: str):
                     })
 
 if __name__ == "__main__":
-    # 仅用于在 core.py 单独测试时使用。正式运行请使用 main.py 启动。
-    test_image = os.path.join(Path(__file__).parent.parent, "assets", "source", "9.png")
+    # 🌟 修改点 3：直接使用我们之前在 .env 配置的全局默认测试图
+    test_image = Config.default_source_image
     asyncio.run(run_heterogeneous_agents(test_image))

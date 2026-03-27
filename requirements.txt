@@ -3,5 +3,6 @@ blender
 mcp
 python-dotenv
 openai
+numpy
 
 pip install git+https://github.com/facebookresearch/segment-anything.git

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 # 获取 config.py 所在的目录（即项目根目录）
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent #cityBuilder
 # 显式指定 .env 文件的绝对路径
 env_path = BASE_DIR / ".env"
 
@@ -32,6 +32,26 @@ class Config:
     server_command: str = "python"
     server_args: list = None
 
+    # ====== 新增：隔离运行环境 ======
+    sam_python_exe: str = os.getenv("SAM_PYTHON_EXE", "")
+    sam3d_python_exe: str = os.getenv("SAM3D_PYTHON_EXE", "")
+    
+    # ====== 新增：模型权重与配置 ======
+    # 如果 .env 里写的是相对路径，这里自动转为绝对路径
+    sam_checkpoint_path: str = os.getenv("SAM_CHECKPOINT_PATH", "")
+    sam3d_config_path: str = os.getenv("SAM3D_CONFIG_PATH", "")
+    
+    # 如果使用的是相对路径，自动拼接 BASE_DIR
+    if sam_checkpoint_path and not os.path.isabs(sam_checkpoint_path):
+        sam_checkpoint_path = os.path.join(BASE_DIR, sam_checkpoint_path)
+    if sam3d_config_path and not os.path.isabs(sam3d_config_path):
+        sam3d_config_path = os.path.join(BASE_DIR, sam3d_config_path)
+
+    # ====== 新增：默认测试图 ======
+    default_source_image: str = os.getenv("DEFAULT_SOURCE_IMAGE", "assets/source/default.png")
+    if not os.path.isabs(default_source_image):
+        default_source_image = os.path.join(BASE_DIR, default_source_image)
+
     # 🔥 这里必须缩进！我帮你修好了
     @classmethod
     def validate(cls):
@@ -57,5 +77,13 @@ class Config:
             raise ValueError("环境变量中未配置ASSETS_PATH，请检查.env文件")
         if not cls.blender_path:
             raise ValueError("环境变量中未配置BLENDER_PATH，请检查.env文件")
+        if not cls.sam_python_exe or not os.path.exists(cls.sam_python_exe):
+            raise ValueError(f"无效的 SAM_PYTHON_EXE，请检查 .env 文件: {cls.sam_python_exe}")
+        if not cls.sam3d_python_exe or not os.path.exists(cls.sam3d_python_exe):
+            raise ValueError(f"无效的 SAM3D_PYTHON_EXE，请检查 .env 文件: {cls.sam3d_python_exe}")
+        if not cls.sam_checkpoint_path or not os.path.exists(cls.sam_checkpoint_path):
+            raise ValueError(f"找不到 SAM 权重文件，请检查 .env: {cls.sam_checkpoint_path}")
+        if not cls.sam3d_config_path or not os.path.exists(cls.sam3d_config_path):
+            raise ValueError(f"找不到 SAM3D 配置文件，请检查 .env: {cls.sam3d_config_path}")
 
 Config.validate()
