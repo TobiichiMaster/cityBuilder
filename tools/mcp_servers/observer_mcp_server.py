@@ -59,28 +59,31 @@ def get_scene_status() -> str:
         return f"[Error]: 系统级异常: {str(e)}"
 
 @mcp.tool()
-def render_camera_view(view_direction: list[float] = [1.0, 1.0, 1.0]) -> str:
+def render_camera_view(view_type: str = "TOP") -> str:
     """
     工具名：渲染场景照片 (智能光学眼)
     描述：自动计算整个 3D 场景的包围盒，将摄像机放置在完美的距离，并从你指定的方向拍摄一张全景照片。
     参数：
-    - view_direction: 观察方向向量 [X, Y, Z]。例如 [1, 1, 1] 代表从右上方俯视。
+    - view_type: 观察方向类型。可选 'TOP' (俯视), 'FRONT' (前视/检查穿模), 'SIDE' (侧视), 'ISO' (透视),'LEVEL' (纯水平视角, 查穿模专用), 'UNDER' (地下仰视视角)。
     返回值：渲染生成的图片在本地的绝对路径。
     """
     script_path = os.path.join(blender_scripts_dir, "take_photo.py")
     os.makedirs(renders_dir, exist_ok=True)
-    save_path = os.path.join(renders_dir, "current_view.png")
     
-    print(f"[MCP Server]: 正在从方向 {view_direction} 拍摄全景照片...")
+    # 💡 优化小技巧：把文件名加上视角类型，这样每次不同视角的照片就不会互相覆盖了！
+    save_path = os.path.join(renders_dir, f"{view_type.lower()}_view.png")
+    
+    # 【修复 1】: 将 view_direction 改为真正的入参 view_type
+    print(f"[MCP Server]: 正在从方向 {view_type} 拍摄全景照片...")
     try:
+        # 【修复 2】: 删掉多余的 render_output_path，精准只传 view_type 和 save_path 两个参数
         result = subprocess.run(
             [
-                blender_path, "-b", scene_path, "-P", script_path, "--",
-                str(view_direction[0]), str(view_direction[1]), str(view_direction[2]),
-                save_path
+                blender_path, "-b", scene_path, "-P", script_path, "--", view_type, save_path
             ],
             capture_output=True, text=True, check=True
         )
+        
         output_lines = result.stdout.strip().split('\n')
         success_msg = next((line for line in output_lines if "SUCCESS" in line), "拍照成功")
         

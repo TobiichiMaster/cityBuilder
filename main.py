@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import queue
 import shutil
 import concurrent.futures
 from pathlib import Path
@@ -58,52 +59,58 @@ async def main():
     try:
         sam_client = SamClient()
         # 1.1 获取基础掩码
-        sam_client.generate_masks(source_image=source_image, output_dir=masks_dir, top_k=15)
+        sam_client.generate_masks(source_image=source_image, output_dir=masks_dir, top_k=25)
         # 1.2 清洗与合并资产
         sam_client.process_masks(input_dir=masks_dir, output_dir=models_dir, original_image_path=source_image)
     except Exception as e:
         print(f"\n❌ 视觉处理失败: {str(e)}")
         return
         
-    # ------------------------------------------
-    # 🏭 步骤 2: 3D 升维阶段 (多卡并发版)
+# ------------------------------------------
+    # 🏭 步骤 2: 3D 升维阶段 (多卡并发版 - 令牌锁机制)
     # ------------------------------------------
     print("\n🏭 步骤 2: 开始将清洗后的 2D 资产升维至 3D (启用多卡高并发)...")
     
-    # 🌟 显式控制区：你要使用的 GPU 列表 (想用几张卡，就写几个 ID)
-    # 例如：你有 8 张卡，现在我们只用前 2 张，就写 [0, 1]
-    AVAILABLE_GPUS = [0, 1] 
+    AVAILABLE_GPUS = [5, 6] 
     MAX_CONCURRENT = len(AVAILABLE_GPUS)
     
     try:
         sam3d_client = Sam3DClient()
+        # ✂️ 仅筛选建筑物进行 3D 升维，跳过 tree, ground 等其他资产
+        npy_tasks = [f for f in os.listdir(models_dir) if f.endswith(".npy") and "building" in f.lower()]
         
-        # 收集所有需要转换的 npy 文件
-        npy_tasks = [f for f in os.listdir(models_dir) if f.endswith(".npy") and "top_objects" not in f]
-        
-        # 定义单体任务包装器
-        def process_single_asset(task_idx, filename):
-            # 轮询分配法：任务 0 给卡 0，任务 1 给卡 1，任务 2 又给卡 0...
-            gpu_id = AVAILABLE_GPUS[task_idx % MAX_CONCURRENT]
+        # 1. 建立线程安全的“显卡钥匙池”
+        gpu_queue = queue.Queue()
+        for gpu_id in AVAILABLE_GPUS:
+            gpu_queue.put(gpu_id) # 把 4 和 5 两把钥匙扔进池子
             
-            mask_npy = os.path.join(models_dir, filename)
-            out_glb = os.path.join(models_dir, filename.replace(".npy", ".glb"))
+        # 2. 定义绝对安全的单体任务包装器
+        def process_single_asset(filename):
+            # 🔒 第一步：抢钥匙！如果池子里没钥匙，线程会在这里死等，绝对不瞎抢资源
+            current_gpu_id = gpu_queue.get()
             
-            sam3d_client.generate_3d_asset(
-                original_image_path=source_image, 
-                mask_npy_path=mask_npy, 
-                output_glb_path=out_glb,
-                gpu_id=gpu_id
-            )
+            try:
+                mask_npy = os.path.join(models_dir, filename)
+                out_glb = os.path.join(models_dir, filename.replace(".npy", ".glb"))
+                
+                sam3d_client.generate_3d_asset(
+                    original_image_path=source_image, 
+                    mask_npy_path=mask_npy, 
+                    output_glb_path=out_glb,
+                    gpu_id=current_gpu_id  # 拿到哪张卡的钥匙，就用哪张卡
+                )
+            finally:
+                # 🔑 第二步：极其重要！无论生成成功还是崩溃，必须把钥匙还回去！
+                gpu_queue.put(current_gpu_id)
 
-        # 🚀 启动线程池进行派发
-        print(f"  🚥 并发引擎已启动，分配了 {MAX_CONCURRENT} 张显卡，共 {len(npy_tasks)} 个资产等待生成...")
+        # 3. 🚀 启动线程池进行派发
+        print(f"  🚥 并发引擎已升级，分配了 {MAX_CONCURRENT} 张显卡，共 {len(npy_tasks)} 个资产等待生成...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as executor:
             futures = []
-            for idx, filename in enumerate(npy_tasks):
-                futures.append(executor.submit(process_single_asset, idx, filename))
+            for filename in npy_tasks:
+                # 现在不需要传 idx 了，因为不依赖硬编码轮询了
+                futures.append(executor.submit(process_single_asset, filename))
                 
-            # 等待所有任务完成，并捕获子线程中可能出现的异常
             for future in concurrent.futures.as_completed(futures):
                 future.result() 
                 

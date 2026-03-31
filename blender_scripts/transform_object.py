@@ -29,8 +29,14 @@ if not obj:
 
 # 执行形变操作
 if option_type == "MOVE":
-    loc_x, loc_y, loc_z = float(args[2]), float(args[3]), float(args[4])
-    obj.location = (loc_x, loc_y, loc_z)
+    # 只有当传过来的参数不是 "None" 时，才去修改对应的轴
+    if args[2] != "None":
+        obj.location[0] = float(args[2])
+    if args[3] != "None":
+        obj.location[1] = float(args[3])
+    if args[4] != "None":
+        obj.location[2] = float(args[4])
+
     
 elif option_type == "ROTATION":
     # 注意：Agent 传来的可能是角度（比如 90 度），如果发现旋转异常，

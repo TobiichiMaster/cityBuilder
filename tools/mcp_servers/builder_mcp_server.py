@@ -92,24 +92,35 @@ def create_blender_object(obj_type: str, name: str, location: list[float] = [0.0
         return f"[Error]: 系统调用异常: {str(e)}"
 
 @mcp.tool()
-def move_object(name: str, location: list[float]) -> str:
+def move_object(name: str, x: float = None, y: float = None, z: float = None) -> str:
     """
     工具名：移动物体
-    描述：将场景中指定名字的物体移动到新的给定的绝对坐标位置。
+    描述：将场景中指定名字的物体移动到新的位置。
+    【重要用法】：支持增量/局部更新！如果你只想修复高度穿模，只传入 z 即可，【千万不要】传入 x 和 y，系统会自动保留其原有的平面坐标！
     """
     script_path = os.path.join(blender_scripts_dir, "transform_object.py")
-    print(f"[MCP Server]: 准备将物体 {name} 移动至 {location}")
+    
+    # 将 None 转换为字符串 "None"，方便通过命令行传给 Blender
+    str_x = str(x) if x is not None else "None"
+    str_y = str(y) if y is not None else "None"
+    str_z = str(z) if z is not None else "None"
+    
+    print(f"[MCP Server]: 准备更新物体 {name} 的坐标 -> X:{str_x}, Y:{str_y}, Z:{str_z}")
+    
     try:
         result = subprocess.run(
-            [blender_path, "-b", scene_path, "-P", script_path, "--", "MOVE", name, str(location[0]), str(location[1]), str(location[2])],
+            [
+                blender_path, "-b", scene_path, "-P", script_path, 
+                "--", "MOVE", name, str_x, str_y, str_z
+            ],
             capture_output=True, text=True, check=True
         )
-        return f"[MCP Server]: 成功移动 {name} 到 {location}。\nBlender输出: {result.stdout.strip()}"
+        return f"[MCP Server]: 成功更新 {name} 坐标 (X:{str_x}, Y:{str_y}, Z:{str_z})。\nBlender输出: {result.stdout.strip()}"
     except subprocess.CalledProcessError as e:
         return f"[Error]: 移动失败。\n报错信息: {e.stderr}\n标准输出: {e.stdout}"
     except Exception as e:
         return f"[Error]: 系统级异常: {str(e)}"
-
+        
 @mcp.tool()
 def rotate_object(name: str, rotation: list[float]) -> str:
     """

@@ -94,19 +94,26 @@ async def run_heterogeneous_agents(image_path: str):
                     "2. 必须调用 get_available_assets 获取当前所有由 SAM3D 生成的 3D 资产及其绝对坐标。\n"
                     "3. 遍历这些资产，调用 create_blender_object (obj_type设为'ASSET') 将它们一一导入。导入时无需传入 location 参数，底层会自动根据 JSON 坐标对齐！\n"
                     "4. 观察我发给你的【原始参考图】，对比你导入后的 3D 空间关系。如果发现有穿模、悬空或位置不对，通过 move_object 等工具进行微调。\n"
-                    "5. 搭建完毕后，向 Observer 汇报你的操作进度。"
+                    "5. 搭建完毕后，向 Observer 汇报你的操作进度。\n"
+                    "【⚠️ 极其重要的空间坐标法则 ⚠️】\n"
+                    "1. 资产原点：你所使用的所有 3D 模型资产，其坐标原点 (Location) 都位于该物体的【绝对几何中心】，而不是底部！\n"
+                    "2. 贴地公式：如果你想让一个物体平稳地放置在地面 (Z=0) 上，你绝对不能把它的 location.z 设为 0（这会导致它一半陷入地下）。\n"
+                    "3. 正确做法：你必须先获取该物体的 dimensions（尺寸），然后将其 Z 坐标严格设置为 `dimensions.z / 2`。\n"
+                    "4. 举例：如果一栋楼的 dimensions.z 是 10 米，想让它站在地面上，它的 location.z 必须是 5。\n"
+                    "5. 坐标继承原则：当 Observer 让你修复 Z 轴穿模问题时，你【绝对不能】将 X 和 Y 坐标归零！你必须查阅之前的记录，保留该物体原本在平面的 X 和 Y 位置，仅仅修改 Z 的值！\n"
                 )
             }]
             
             observer_messages = [{
                 "role": "system", 
                 "content": (
-                    "你是极其严苛的多模态 3D 场景审查员(Observer Brain)。"
-                    "你的工作流："
-                    "1. 必须同时调用 get_scene_status (获取雷达数据) 和 render_camera_view (拍照)。"
-                    "2. 拿到照片和 JSON 数据后，进行图文交叉验证！照片看整体关系和穿模，JSON 算绝对坐标。"
-                    "3. 指出错误，并用公式算出正确的 location 坐标给 Builder。"
-                    "4. 【极其重要】：如果有错误，回复最后单列一行：[VERDICT: FAIL] 。如果一切完美没有穿模，回复最后单列一行：[VERDICT: PASS] 。"
+                    "你是极其严苛的多模态 3D 场景穿模审查员 (Observer Brain)。\n"
+                    "你的工作流：\n"
+                    "1. 必须调用 render_camera_view 拍摄现场照片。要检查穿模，你【必须】使用 view_type='LEVEL' 或 'UNDER'！\n"
+                    "2. 在 LEVEL（纯水平）视角下，地面是一条绝对的水平线。如果任何建筑或物体的底部超出了这条线（向下延伸），说明发生了严重的穿模 (Clipping)！\n"
+                    "3. 如果发生穿模，交叉比对 get_scene_status 获取的 JSON 数据。记住物理法则：物体的绝对底部 Z 坐标 = location.z - (dimensions.z / 2)。\n"
+                    "4. 如果计算出底部 Z 坐标 < 0，必须明确告诉 Builder：'大楼陷入了地下！请调用 move_object 将其 location.z 设置为 [正确的数值]'。\n"
+                    "5. 如果一切完美，没有任何像素低于地平线，回复最后单列一行：[VERDICT: PASS]。如果有穿模，回复：[VERDICT: FAIL]。"
                 )
             }]
 
